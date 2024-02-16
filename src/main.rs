@@ -91,6 +91,11 @@ enum Model {
     EfficientNetV2S,
     EfficientNetV2M,
     EfficientNetV2L,
+    ViTB16,
+    ViTB32,
+    ViTBH14,
+    ViTL16,
+    ViTL32,
 }
 
 fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
@@ -164,7 +169,12 @@ fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
         Model::EfficientNetV2S => Box::new(efficientnet::efficientnet_v2s(&vs.root(), 1000)),
         Model::EfficientNetV2M => Box::new(efficientnet::efficientnet_v2m(&vs.root(), 1000)),
         Model::EfficientNetV2L => Box::new(efficientnet::efficientnet_v2l(&vs.root(), 1000)), // TODO:
-                                                                                              // Known Issue : Incorrect output
+        // Known Issue : Incorrect output
+        Model::ViTB16 => Box::new(vit::vit_b_16(&vs.root(), 1000)),
+        Model::ViTB32 => Box::new(vit::vit_b_32(&vs.root(), 1000)),
+        Model::ViTBH14 => Box::new(vit::vit_h_14(&vs.root(), 1000)),
+        Model::ViTL16 => Box::new(vit::vit_l_16(&vs.root(), 1000)),
+        Model::ViTL32 => Box::new(vit::vit_l_32(&vs.root(), 1000)),
     };
 
     match model {
@@ -236,6 +246,11 @@ fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
         Model::EfficientNetV2S => vs.load("efficientnet_v2_s.safetensors")?,
         Model::EfficientNetV2M => vs.load("efficientnet_v2_m.safetensors")?,
         Model::EfficientNetV2L => vs.load("efficientnet_v2_l.safetensors")?,
+        Model::ViTB16 => vs.load("vit_b_16.safetensors")?,
+        Model::ViTB32 => vs.load("vit_b_32.safetensors")?,
+        Model::ViTBH14 => vs.load("vit_h_14.safetensors")?,
+        Model::ViTL16 => vs.load("vit_l_16.safetensors")?,
+        Model::ViTL32 => vs.load("vit_l_32.safetensors")?,
     }
 
     Ok((m, vs))
@@ -316,17 +331,22 @@ fn main() -> Result<()> {
         // Model::ResNext101_64x4d,
         // Model::WideResNet50_2,
         // Model::WideResNet101_2,
-        Model::EfficientNetB0,
-        Model::EfficientNetB1,
-        Model::EfficientNetB2,
-        Model::EfficientNetB3,
-        Model::EfficientNetB4,
-        Model::EfficientNetB5,
-        Model::EfficientNetB6,
-        Model::EfficientNetB7,
-        Model::EfficientNetV2S,
-        Model::EfficientNetV2M,
-        Model::EfficientNetV2L,
+        // Model::EfficientNetB0,
+        // Model::EfficientNetB1,
+        // Model::EfficientNetB2,
+        // Model::EfficientNetB3,
+        // Model::EfficientNetB4,
+        // Model::EfficientNetB5,
+        // Model::EfficientNetB6,
+        // Model::EfficientNetB7,
+        // Model::EfficientNetV2S,
+        // Model::EfficientNetV2M,
+        // Model::EfficientNetV2L,
+        Model::ViTB16,
+        Model::ViTB32,
+        Model::ViTBH14,
+        Model::ViTL16,
+        Model::ViTL32,
     ] {
         println!("Loading model: {:?}", model);
 
