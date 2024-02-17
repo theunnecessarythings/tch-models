@@ -10,6 +10,7 @@ mod densenet;
 mod efficientnet;
 mod googlenet;
 mod inception;
+mod maxvit;
 mod mnasnet;
 mod mobilenet_v2;
 mod mobilenet_v3;
@@ -96,6 +97,7 @@ enum Model {
     ViTBH14,
     ViTL16,
     ViTL32,
+    MaxViTT,
 }
 
 fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
@@ -175,6 +177,7 @@ fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
         Model::ViTBH14 => Box::new(vit::vit_h_14(&vs.root(), 1000)),
         Model::ViTL16 => Box::new(vit::vit_l_16(&vs.root(), 1000)),
         Model::ViTL32 => Box::new(vit::vit_l_32(&vs.root(), 1000)),
+        Model::MaxViTT => Box::new(maxvit::maxvit_t(&vs.root(), 1000)),
     };
 
     match model {
@@ -251,6 +254,7 @@ fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
         Model::ViTBH14 => vs.load("vit_h_14.safetensors")?,
         Model::ViTL16 => vs.load("vit_l_16.safetensors")?,
         Model::ViTL32 => vs.load("vit_l_32.safetensors")?,
+        Model::MaxViTT => vs.load("maxvit_t.safetensors")?,
     }
 
     Ok((m, vs))
@@ -342,11 +346,12 @@ fn main() -> Result<()> {
         // Model::EfficientNetV2S,
         // Model::EfficientNetV2M,
         // Model::EfficientNetV2L,
-        Model::ViTB16,
-        Model::ViTB32,
-        Model::ViTBH14,
-        Model::ViTL16,
-        Model::ViTL32,
+        // Model::ViTB16,
+        // Model::ViTB32,
+        // Model::ViTBH14,
+        // Model::ViTL16,
+        // Model::ViTL32,
+        Model::MaxViTT,
     ] {
         println!("Loading model: {:?}", model);
 
