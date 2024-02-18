@@ -18,6 +18,7 @@ mod regnet;
 mod resnet;
 mod shufflenet_v2;
 mod squeezenet;
+mod swin_transformer;
 mod util;
 mod vgg;
 mod vit;
@@ -98,6 +99,12 @@ enum Model {
     ViTL16,
     ViTL32,
     MaxViTT,
+    SwinT,
+    SwinS,
+    SwinB,
+    SwinV2T,
+    SwinV2S,
+    SwinV2B,
 }
 
 fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
@@ -178,6 +185,12 @@ fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
         Model::ViTL16 => Box::new(vit::vit_l_16(&vs.root(), 1000)),
         Model::ViTL32 => Box::new(vit::vit_l_32(&vs.root(), 1000)),
         Model::MaxViTT => Box::new(maxvit::maxvit_t(&vs.root(), 1000)),
+        Model::SwinT => Box::new(swin_transformer::swin_t(&vs.root(), 1000)),
+        Model::SwinS => Box::new(swin_transformer::swin_s(&vs.root(), 1000)),
+        Model::SwinB => Box::new(swin_transformer::swin_b(&vs.root(), 1000)),
+        Model::SwinV2T => Box::new(swin_transformer::swin_v2_t(&vs.root(), 1000)),
+        Model::SwinV2S => Box::new(swin_transformer::swin_v2_s(&vs.root(), 1000)),
+        Model::SwinV2B => Box::new(swin_transformer::swin_v2_b(&vs.root(), 1000)),
     };
 
     match model {
@@ -255,6 +268,12 @@ fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
         Model::ViTL16 => vs.load("vit_l_16.safetensors")?,
         Model::ViTL32 => vs.load("vit_l_32.safetensors")?,
         Model::MaxViTT => vs.load("maxvit_t.safetensors")?,
+        Model::SwinT => vs.load("swin_t.safetensors")?,
+        Model::SwinS => vs.load("swin_s.safetensors")?,
+        Model::SwinB => vs.load("swin_b.safetensors")?,
+        Model::SwinV2T => vs.load("swin_v2_t.safetensors")?,
+        Model::SwinV2S => vs.load("swin_v2_s.safetensors")?,
+        Model::SwinV2B => vs.load("swin_v2_b.safetensors")?,
     }
 
     Ok((m, vs))
@@ -351,7 +370,13 @@ fn main() -> Result<()> {
         // Model::ViTBH14,
         // Model::ViTL16,
         // Model::ViTL32,
-        Model::MaxViTT,
+        // Model::MaxViTT,
+        Model::SwinT,
+        // Model::SwinS,
+        // Model::SwinB,
+        Model::SwinV2T,
+        // Model::SwinV2S,
+        // Model::SwinV2B,
     ] {
         println!("Loading model: {:?}", model);
 
