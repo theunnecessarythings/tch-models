@@ -1,14 +1,28 @@
-use anyhow::Result;
-use tch::{
-    nn::{self, VarStore},
-    vision::imagenet,
-    Device, Kind, Tensor,
+use std::{
+    io,
+    path::{Path, PathBuf},
 };
+
+use ai_dataloader::{indexable::DataLoader, Len};
+use anyhow::Result;
+use image::imageops::FilterType;
+use imagenet::Transforms;
+use tch::{
+    kind,
+    nn::{self, VarStore},
+    vision::{
+        dataset::Dataset,
+        imagenet::{load_image, load_image_and_resize224},
+    },
+    Device, Kind, TchError, Tensor,
+};
+use indicatif::{ProgressIterator, ProgressStyle};
 mod alexnet;
 mod convnext;
 mod densenet;
 mod efficientnet;
 mod googlenet;
+mod imagenet;
 mod inception;
 mod maxvit;
 mod mnasnet;
@@ -23,7 +37,11 @@ mod util;
 mod vgg;
 mod vit;
 
-#[derive(Debug)]
+use ai_dataloader::collate::TorchCollate;
+
+
+
+#[derive(Debug, Clone)]
 enum Model {
     AlexNet,
     ConvNextBase,
@@ -107,7 +125,7 @@ enum Model {
     SwinV2B,
 }
 
-fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
+fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore, Transforms)> {
     let mut vs = VarStore::new(Device::cuda_if_available());
     let m: Box<dyn nn::ModuleT> = match model {
         Model::AlexNet => Box::new(alexnet::alexnet(&vs.root(), 1000)),
@@ -194,89 +212,652 @@ fn load_model(model: Model) -> Result<(Box<dyn nn::ModuleT>, VarStore)> {
     };
 
     match model {
-        Model::AlexNet => vs.load("alexnet.safetensors")?,
-        Model::ConvNextBase => vs.load("convnext_base.safetensors")?,
-        Model::ConvNextSmall => vs.load("convnext_small.safetensors")?,
-        Model::ConvNextTiny => vs.load("convnext_tiny.safetensors")?,
-        Model::ConvNextLarge => vs.load("convnext_large.safetensors")?,
-        Model::DenseNet121 => vs.load("densenet121.safetensors")?,
-        Model::DenseNet161 => vs.load("densenet161.safetensors")?,
-        Model::DenseNet169 => vs.load("densenet169.safetensors")?,
-        Model::DenseNet201 => vs.load("densenet201.safetensors")?,
-        Model::GoogleNet => vs.load("googlenet.safetensors")?,
-        Model::InceptionV3 => vs.load("inception_v3.safetensors")?,
-        Model::MnasNet0_5 => vs.load("mnasnet0_5.safetensors")?,
-        Model::MnasNet0_75 => vs.load("mnasnet0_75.safetensors")?,
-        Model::MnasNet1_0 => vs.load("mnasnet1_0.safetensors")?,
-        Model::MnasNet1_3 => vs.load("mnasnet1_3.safetensors")?,
-        Model::MobileNetV2 => vs.load("mobilenet_v2.safetensors")?,
-        Model::MobileNetV3Small => vs.load("mobilenet_v3_small.safetensors")?,
-        Model::MobileNetV3Large => vs.load("mobilenet_v3_large.safetensors")?,
-        Model::RegNetY400MF => vs.load("regnet_y_400mf.safetensors")?,
-        Model::RegNetY800MF => vs.load("regnet_y_800mf.safetensors")?,
-        Model::RegNetY1_6GF => vs.load("regnet_y_1_6gf.safetensors")?,
-        Model::RegNetY3_2GF => vs.load("regnet_y_3_2gf.safetensors")?,
-        Model::RegNetY8GF => vs.load("regnet_y_8gf.safetensors")?,
-        Model::RegNetY16GF => vs.load("regnet_y_16gf.safetensors")?,
-        Model::RegNetY32GF => vs.load("regnet_y_32gf.safetensors")?,
-        Model::RegNetY128GF => vs.load("regnet_y_128gf.safetensors")?,
-        Model::RegNetX400MF => vs.load("regnet_x_400mf.safetensors")?,
-        Model::RegNetX800MF => vs.load("regnet_x_800mf.safetensors")?,
-        Model::RegNetX1_6GF => vs.load("regnet_x_1_6gf.safetensors")?,
-        Model::RegNetX3_2GF => vs.load("regnet_x_3_2gf.safetensors")?,
-        Model::RegNetX8GF => vs.load("regnet_x_8gf.safetensors")?,
-        Model::RegNetX16GF => vs.load("regnet_x_16gf.safetensors")?,
-        Model::RegNetX32GF => vs.load("regnet_x_32gf.safetensors")?,
-        Model::ShuffleNetV2X0_5 => vs.load("shufflenet_v2_x0_5.safetensors")?,
-        Model::ShuffleNetV2X1_0 => vs.load("shufflenet_v2_x1_0.safetensors")?,
-        Model::ShuffleNetV2X1_5 => vs.load("shufflenet_v2_x1_5.safetensors")?,
-        Model::ShuffleNetV2X2_0 => vs.load("shufflenet_v2_x2_0.safetensors")?,
-        Model::SqueezeNet1_0 => vs.load("squeezenet1_0.safetensors")?,
-        Model::SqueezeNet1_1 => vs.load("squeezenet1_1.safetensors")?,
-        Model::VGG11 => vs.load("vgg11.safetensors")?,
-        Model::VGG11BN => vs.load("vgg11_bn.safetensors")?,
-        Model::VGG13 => vs.load("vgg13.safetensors")?,
-        Model::VGG13BN => vs.load("vgg13_bn.safetensors")?,
-        Model::VGG16 => vs.load("vgg16.safetensors")?,
-        Model::VGG16BN => vs.load("vgg16_bn.safetensors")?,
-        Model::VGG19 => vs.load("vgg19.safetensors")?,
-        Model::VGG19BN => vs.load("vgg19_bn.safetensors")?,
-        Model::ResNet18 => vs.load("resnet18.safetensors")?,
-        Model::ResNet34 => vs.load("resnet34.safetensors")?,
-        Model::ResNet50 => vs.load("resnet50.safetensors")?,
-        Model::ResNet101 => vs.load("resnet101.safetensors")?,
-        Model::ResNet152 => vs.load("resnet152.safetensors")?,
-        Model::ResNext50_32x4d => vs.load("resnext50_32x4d.safetensors")?,
-        Model::ResNext101_32x8d => vs.load("resnext101_32x8d.safetensors")?,
-        Model::ResNext101_64x4d => vs.load("resnext101_64x4d.safetensors")?,
-        Model::WideResNet50_2 => vs.load("wide_resnet50_2.safetensors")?,
-        Model::WideResNet101_2 => vs.load("wide_resnet101_2.safetensors")?,
-        Model::EfficientNetB0 => vs.load("efficientnet_b0.safetensors")?,
-        Model::EfficientNetB1 => vs.load("efficientnet_b1.safetensors")?,
-        Model::EfficientNetB2 => vs.load("efficientnet_b2.safetensors")?,
-        Model::EfficientNetB3 => vs.load("efficientnet_b3.safetensors")?,
-        Model::EfficientNetB4 => vs.load("efficientnet_b4.safetensors")?,
-        Model::EfficientNetB5 => vs.load("efficientnet_b5.safetensors")?,
-        Model::EfficientNetB6 => vs.load("efficientnet_b6.safetensors")?,
-        Model::EfficientNetB7 => vs.load("efficientnet_b7.safetensors")?,
-        Model::EfficientNetV2S => vs.load("efficientnet_v2_s.safetensors")?,
-        Model::EfficientNetV2M => vs.load("efficientnet_v2_m.safetensors")?,
-        Model::EfficientNetV2L => vs.load("efficientnet_v2_l.safetensors")?,
-        Model::ViTB16 => vs.load("vit_b_16.safetensors")?,
-        Model::ViTB32 => vs.load("vit_b_32.safetensors")?,
-        Model::ViTBH14 => vs.load("vit_h_14.safetensors")?,
-        Model::ViTL16 => vs.load("vit_l_16.safetensors")?,
-        Model::ViTL32 => vs.load("vit_l_32.safetensors")?,
-        Model::MaxViTT => vs.load("maxvit_t.safetensors")?,
-        Model::SwinT => vs.load("swin_t.safetensors")?,
-        Model::SwinS => vs.load("swin_s.safetensors")?,
-        Model::SwinB => vs.load("swin_b.safetensors")?,
-        Model::SwinV2T => vs.load("swin_v2_t.safetensors")?,
-        Model::SwinV2S => vs.load("swin_v2_s.safetensors")?,
-        Model::SwinV2B => vs.load("swin_v2_b.safetensors")?,
+        Model::AlexNet => vs.load("safetensors/alexnet.safetensors")?,
+        Model::ConvNextBase => vs.load("safetensors/convnext_base.safetensors")?,
+        Model::ConvNextSmall => vs.load("safetensors/convnext_small.safetensors")?,
+        Model::ConvNextTiny => vs.load("safetensors/convnext_tiny.safetensors")?,
+        Model::ConvNextLarge => vs.load("safetensors/convnext_large.safetensors")?,
+        Model::DenseNet121 => vs.load("safetensors/densenet121.safetensors")?,
+        Model::DenseNet161 => vs.load("safetensors/densenet161.safetensors")?,
+        Model::DenseNet169 => vs.load("safetensors/densenet169.safetensors")?,
+        Model::DenseNet201 => vs.load("safetensors/densenet201.safetensors")?,
+        Model::GoogleNet => vs.load("safetensors/googlenet.safetensors")?,
+        Model::InceptionV3 => vs.load("safetensors/inception_v3.safetensors")?,
+        Model::MnasNet0_5 => vs.load("safetensors/mnasnet0_5.safetensors")?,
+        Model::MnasNet0_75 => vs.load("safetensors/mnasnet0_75.safetensors")?,
+        Model::MnasNet1_0 => vs.load("safetensors/mnasnet1_0.safetensors")?,
+        Model::MnasNet1_3 => vs.load("safetensors/mnasnet1_3.safetensors")?,
+        Model::MobileNetV2 => vs.load("safetensors/mobilenet_v2.safetensors")?,
+        Model::MobileNetV3Small => vs.load("safetensors/mobilenet_v3_small.safetensors")?,
+        Model::MobileNetV3Large => vs.load("safetensors/mobilenet_v3_large.safetensors")?,
+        Model::RegNetY400MF => vs.load("safetensors/regnet_y_400mf.safetensors")?,
+        Model::RegNetY800MF => vs.load("safetensors/regnet_y_800mf.safetensors")?,
+        Model::RegNetY1_6GF => vs.load("safetensors/regnet_y_1_6gf.safetensors")?,
+        Model::RegNetY3_2GF => vs.load("safetensors/regnet_y_3_2gf.safetensors")?,
+        Model::RegNetY8GF => vs.load("safetensors/regnet_y_8gf.safetensors")?,
+        Model::RegNetY16GF => vs.load("safetensors/regnet_y_16gf.safetensors")?,
+        Model::RegNetY32GF => vs.load("safetensors/regnet_y_32gf.safetensors")?,
+        Model::RegNetY128GF => vs.load("safetensors/regnet_y_128gf.safetensors")?,
+        Model::RegNetX400MF => vs.load("safetensors/regnet_x_400mf.safetensors")?,
+        Model::RegNetX800MF => vs.load("safetensors/regnet_x_800mf.safetensors")?,
+        Model::RegNetX1_6GF => vs.load("safetensors/regnet_x_1_6gf.safetensors")?,
+        Model::RegNetX3_2GF => vs.load("safetensors/regnet_x_3_2gf.safetensors")?,
+        Model::RegNetX8GF => vs.load("safetensors/regnet_x_8gf.safetensors")?,
+        Model::RegNetX16GF => vs.load("safetensors/regnet_x_16gf.safetensors")?,
+        Model::RegNetX32GF => vs.load("safetensors/regnet_x_32gf.safetensors")?,
+        Model::ShuffleNetV2X0_5 => vs.load("safetensors/shufflenet_v2_x0_5.safetensors")?,
+        Model::ShuffleNetV2X1_0 => vs.load("safetensors/shufflenet_v2_x1_0.safetensors")?,
+        Model::ShuffleNetV2X1_5 => vs.load("safetensors/shufflenet_v2_x1_5.safetensors")?,
+        Model::ShuffleNetV2X2_0 => vs.load("safetensors/shufflenet_v2_x2_0.safetensors")?,
+        Model::SqueezeNet1_0 => vs.load("safetensors/squeezenet1_0.safetensors")?,
+        Model::SqueezeNet1_1 => vs.load("safetensors/squeezenet1_1.safetensors")?,
+        Model::VGG11 => vs.load("safetensors/vgg11.safetensors")?,
+        Model::VGG11BN => vs.load("safetensors/vgg11_bn.safetensors")?,
+        Model::VGG13 => vs.load("safetensors/vgg13.safetensors")?,
+        Model::VGG13BN => vs.load("safetensors/vgg13_bn.safetensors")?,
+        Model::VGG16 => vs.load("safetensors/vgg16.safetensors")?,
+        Model::VGG16BN => vs.load("safetensors/vgg16_bn.safetensors")?,
+        Model::VGG19 => vs.load("safetensors/vgg19.safetensors")?,
+        Model::VGG19BN => vs.load("safetensors/vgg19_bn.safetensors")?,
+        Model::ResNet18 => vs.load("safetensors/resnet18.safetensors")?,
+        Model::ResNet34 => vs.load("safetensors/resnet34.safetensors")?,
+        Model::ResNet50 => vs.load("safetensors/resnet50.safetensors")?,
+        Model::ResNet101 => vs.load("safetensors/resnet101.safetensors")?,
+        Model::ResNet152 => vs.load("safetensors/resnet152.safetensors")?,
+        Model::ResNext50_32x4d => vs.load("safetensors/resnext50_32x4d.safetensors")?,
+        Model::ResNext101_32x8d => vs.load("safetensors/resnext101_32x8d.safetensors")?,
+        Model::ResNext101_64x4d => vs.load("safetensors/resnext101_64x4d.safetensors")?,
+        Model::WideResNet50_2 => vs.load("safetensors/wide_resnet50_2.safetensors")?,
+        Model::WideResNet101_2 => vs.load("safetensors/wide_resnet101_2.safetensors")?,
+        Model::EfficientNetB0 => vs.load("safetensors/efficientnet_b0.safetensors")?,
+        Model::EfficientNetB1 => vs.load("safetensors/efficientnet_b1.safetensors")?,
+        Model::EfficientNetB2 => vs.load("safetensors/efficientnet_b2.safetensors")?,
+        Model::EfficientNetB3 => vs.load("safetensors/efficientnet_b3.safetensors")?,
+        Model::EfficientNetB4 => vs.load("safetensors/efficientnet_b4.safetensors")?,
+        Model::EfficientNetB5 => vs.load("safetensors/efficientnet_b5.safetensors")?,
+        Model::EfficientNetB6 => vs.load("safetensors/efficientnet_b6.safetensors")?,
+        Model::EfficientNetB7 => vs.load("safetensors/efficientnet_b7.safetensors")?,
+        Model::EfficientNetV2S => vs.load("safetensors/efficientnet_v2_s.safetensors")?,
+        Model::EfficientNetV2M => vs.load("safetensors/efficientnet_v2_m.safetensors")?,
+        Model::EfficientNetV2L => vs.load("safetensors/efficientnet_v2_l.safetensors")?,
+        Model::ViTB16 => vs.load("safetensors/vit_b_16.safetensors")?,
+        Model::ViTB32 => vs.load("safetensors/vit_b_32.safetensors")?,
+        Model::ViTBH14 => vs.load("safetensors/vit_h_14.safetensors")?,
+        Model::ViTL16 => vs.load("safetensors/vit_l_16.safetensors")?,
+        Model::ViTL32 => vs.load("safetensors/vit_l_32.safetensors")?,
+        Model::MaxViTT => vs.load("safetensors/maxvit_t.safetensors")?,
+        Model::SwinT => vs.load("safetensors/swin_t.safetensors")?,
+        Model::SwinS => vs.load("safetensors/swin_s.safetensors")?,
+        Model::SwinB => vs.load("safetensors/swin_b.safetensors")?,
+        Model::SwinV2T => vs.load("safetensors/swin_v2_t.safetensors")?,
+        Model::SwinV2S => vs.load("safetensors/swin_v2_s.safetensors")?,
+        Model::SwinV2B => vs.load("safetensors/swin_v2_b.safetensors")?,
     }
 
-    Ok((m, vs))
+    let transforms = match model {
+        Model::AlexNet => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ConvNextTiny => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            236,
+            FilterType::Triangle,
+        ),
+        Model::ConvNextSmall => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            230,
+            FilterType::Triangle,
+        ),
+        Model::ConvNextBase => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ConvNextLarge => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::DenseNet121 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::DenseNet161 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::DenseNet169 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::DenseNet201 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::EfficientNetB0 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::CatmullRom,
+        ),
+        Model::EfficientNetB1 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            240,
+            255,
+            FilterType::Triangle,
+        ),
+        Model::EfficientNetB2 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            288,
+            288,
+            FilterType::CatmullRom,
+        ),
+        Model::EfficientNetB3 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            300,
+            320,
+            FilterType::CatmullRom,
+        ),
+        Model::EfficientNetB4 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            380,
+            384,
+            FilterType::CatmullRom,
+        ),
+        Model::EfficientNetB5 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            456,
+            456,
+            FilterType::CatmullRom,
+        ),
+        Model::EfficientNetB6 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            528,
+            528,
+            FilterType::CatmullRom,
+        ),
+        Model::EfficientNetB7 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            600,
+            600,
+            FilterType::CatmullRom,
+        ),
+        Model::EfficientNetV2S => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            384,
+            384,
+            FilterType::Triangle,
+        ),
+        Model::EfficientNetV2M => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            480,
+            480,
+            FilterType::Triangle,
+        ),
+        Model::EfficientNetV2L => Transforms::new(
+            (0.5, 0.5, 0.5),
+            (0.5, 0.5, 0.5),
+            480,
+            480,
+            FilterType::CatmullRom,
+        ),
+        Model::GoogleNet => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::InceptionV3 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            299,
+            342,
+            FilterType::Triangle,
+        ),
+        Model::MnasNet0_5 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::MnasNet0_75 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::MnasNet1_0 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::MnasNet1_3 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::MobileNetV2 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::MobileNetV3Large => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::MobileNetV3Small => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::RegNetY400MF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetY800MF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetY1_6GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetY3_2GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetY8GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetY16GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetY32GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetY128GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            384,
+            384,
+            FilterType::Triangle,
+        ),
+        Model::RegNetX400MF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetX800MF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetX1_6GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetX3_2GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetX8GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetX16GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::RegNetX32GF => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ResNet18 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ResNet34 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ResNet50 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ResNet101 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ResNet152 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ResNext50_32x4d => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ResNext101_32x8d => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ResNext101_64x4d => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::WideResNet50_2 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::WideResNet101_2 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ShuffleNetV2X0_5 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ShuffleNetV2X1_0 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ShuffleNetV2X1_5 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::ShuffleNetV2X2_0 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::Triangle,
+        ),
+        Model::SqueezeNet1_0 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::SqueezeNet1_1 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::VGG11 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::VGG11BN => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::VGG13 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::VGG13BN => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::VGG16 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::VGG16BN => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::VGG19 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::VGG19BN => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ViTB16 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ViTB32 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ViTL16 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            242,
+            FilterType::Triangle,
+        ),
+        Model::ViTL32 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            256,
+            FilterType::Triangle,
+        ),
+        Model::ViTBH14 => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            518,
+            518,
+            FilterType::CatmullRom,
+        ),
+        Model::SwinT => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            232,
+            FilterType::CatmullRom,
+        ),
+        Model::SwinS => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            246,
+            FilterType::CatmullRom,
+        ),
+        Model::SwinB => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            238,
+            FilterType::CatmullRom,
+        ),
+        Model::SwinV2T => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            256,
+            260,
+            FilterType::CatmullRom,
+        ),
+        Model::SwinV2S => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            256,
+            260,
+            FilterType::CatmullRom,
+        ),
+        Model::SwinV2B => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            256,
+            272,
+            FilterType::CatmullRom,
+        ),
+        Model::MaxViTT => Transforms::new(
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225),
+            224,
+            224,
+            FilterType::CatmullRom,
+        )
+    };
+
+    Ok((m, vs, transforms))
 }
 
 fn print_varstore(vs: VarStore) {
@@ -322,7 +903,7 @@ fn main() -> Result<()> {
         // Model::RegNetY8GF,
         // Model::RegNetY16GF,
         // Model::RegNetY32GF,
-        // Model::RegNetY128GF,
+        // // Model::RegNetY128GF,
         // Model::RegNetX400MF,
         // Model::RegNetX800MF,
         // Model::RegNetX1_6GF,
@@ -359,45 +940,73 @@ fn main() -> Result<()> {
         // Model::EfficientNetB2,
         // Model::EfficientNetB3,
         // Model::EfficientNetB4,
-        // Model::EfficientNetB5,
-        // Model::EfficientNetB6,
-        // Model::EfficientNetB7,
-        // Model::EfficientNetV2S,
-        // Model::EfficientNetV2M,
-        // Model::EfficientNetV2L,
-        // Model::ViTB16,
-        // Model::ViTB32,
+        Model::EfficientNetB5,
+        Model::EfficientNetB6,
+        Model::EfficientNetB7,
+        Model::EfficientNetV2S,
+        Model::EfficientNetV2M,
+        Model::EfficientNetV2L,
+        Model::ViTB16,
+        Model::ViTB32,
         // Model::ViTBH14,
-        // Model::ViTL16,
-        // Model::ViTL32,
-        // Model::MaxViTT,
+        Model::ViTL16,
+        Model::ViTL32,
+        Model::MaxViTT,
         Model::SwinT,
-        // Model::SwinS,
-        // Model::SwinB,
+        Model::SwinS,
+        Model::SwinB,
         Model::SwinV2T,
-        // Model::SwinV2S,
-        // Model::SwinV2B,
+        Model::SwinV2S,
+        Model::SwinV2B,
     ] {
         println!("Loading model: {:?}", model);
 
-        let (model, vs) = load_model(model)?;
-        let image = imagenet::load_image_and_resize224("../candle-test/examples/tiger.jpg")?
-            .to_device(vs.device())
-            .unsqueeze(0);
-        // let image = Tensor::ones([1, 3, 224, 224], (Kind::Float, vs.device()));
+        // eval_imagenet(model.clone());
+        let _guard = tch::no_grad_guard();
 
-        // let w = &vs.variables_.lock().unwrap().named_variables;
-        // let w = w.get("features.6.1.block.3.1.running_mean").unwrap();
-        // println!("{w}");
+        let (model, vs, transforms) = load_model(model)?;
+        // let image = load_image_and_resize224("tiger.jpg")?
+        //     .to_device(vs.device())
+        //     .unsqueeze(0);
+        // // let image = Tensor::ones([1, 3, 224, 224], (Kind::Float, vs.device()));
 
-        let output = model.forward_t(&image, false).softmax(-1, Kind::Float);
+        // // let w = &vs.variables_.lock().unwrap().named_variables;
+        // // let w = w.get("features.6.1.block.3.1.running_mean").unwrap();
+        // // println!("{w}");
 
-        for (probability, class) in imagenet::top(&output, 5).iter() {
-            println!("{:50} {:5.2}%", class, 100.0 * probability)
-        }
-        println!();
+        // let output = model.forward_t(&image, false).softmax(-1, Kind::Float);
+
+        // for (probability, class) in tch::vision::imagenet::top(&output, 5).iter() {
+        //     println!("{:50} {:5.2}%", class, 100.0 * probability)
+        // }
+        // println!();
 
         // print_varstore(vs);
+
+        let ds = imagenet::ImageNetDataset::new(PathBuf::from("."), transforms);
+        let loader = DataLoader::builder(ds)
+            .batch_size(64)
+            .collate_fn(TorchCollate)
+            .build();
+
+        let mut y_true: Vec<Tensor> = vec![];
+        let mut y_pred: Vec<Tensor> = vec![];
+
+        for (_batch_id, (image, labels)) in loader.iter().enumerate().progress() {
+            let output = model
+                .forward_t(&image.to(vs.device()), false)
+                .softmax(-1, Kind::Float)
+                .argmax(1, false);
+            y_true.push(labels.to(vs.device()));
+            y_pred.push(output);
+        }
+        let y_true = Tensor::cat(&y_true, 0);
+        let y_pred = Tensor::cat(&y_pred, 0);
+        let accuracy = y_true
+            .eq_tensor(&y_pred)
+            .to_kind(Kind::Float)
+            .mean(Kind::Float);
+        println!("Accuracy: {:?}", accuracy);
     }
 
     Ok(())
