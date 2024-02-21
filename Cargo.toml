@@ -7,4 +7,19 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.79"
+image = "0.24.8"
+ndarray = "0.15.6"
+rayon = "1.8.1"
+serde = {version="1.0.196", features = ["derive"]}
+serde_json = "1.0.113"
 tch = "0.15.0"
+ai-dataloader = {git="https://github.com/Tudyx/ai-dataloader", branch="main", features=["tch"]}
+nshare = "0.9.0"
+indicatif = "0.17.8"
+
+
+[target.'cfg(any(windows, unix))']
+rustflags = ["-C", "target-cpu=native"]
+
+[profile.release]
+lto = true
