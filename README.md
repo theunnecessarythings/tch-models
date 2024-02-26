@@ -2,7 +2,7 @@
 
 | Model                | tch-rs             | TorchVision                |
 |----------------------|--------------------|----------------------------|
-| AlexNet              | 23.33              | 56.52                      |
+| AlexNet              | 56.53              | 56.52                      |
 | ConvNextBase         | 84.04              | 84.06                      |
 | ConvNextSmall        | 83.56              | 83.62                      |
 | ConvNextTiny         | 82.47              | 82.52                      |
@@ -18,8 +18,8 @@
 | MnasNet1_0           | 73.42              | 73.46                      |
 | MnasNet1_3           | 76.47              | 76.51                      |
 | MobileNetV2          | 71.70              | 71.88                      |
-| MobileNetV3Small     | 43.34              | 67.67                      |
-| MobileNetV3Large     | 62.56              | 74.04                      |
+| MobileNetV3Small     | 66.00              | 67.67                      |
+| MobileNetV3Large     | 71.27              | 74.04                      |
 | RegNetY400MF         | 73.79              | 74.05                      |
 | RegNetY800MF         | 76.42              | 76.42                      |
 | RegNetY1_6GF         | 77.69              | 77.95                      |
@@ -86,12 +86,12 @@
 - [x] ConvNet Model Implementations
 - [x] Weight Loading from PyTorch
 - [ ] Proper weight initializations
-- [x] ViT Models
+- [ ] ViT Models
 - [x] ImageNet Evaluations
 - [ ] CIFAR-10 Training 
 - [ ] Retain original comments
 - [ ] Add references
 - [ ] Documentation
 - [ ] Fix Bugs 
-    - [ ] AlexNet
+    - [x] AlexNet
     - [ ] MobileNetV3
