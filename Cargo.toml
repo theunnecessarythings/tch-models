@@ -16,6 +16,7 @@ tch = "0.15.0"
 ai-dataloader = {git="https://github.com/Tudyx/ai-dataloader", branch="main", features=["tch"]}
 nshare = "0.9.0"
 indicatif = "0.17.8"
+hf-hub = "0.3.2"
 
 
 [target.'cfg(any(windows, unix))']

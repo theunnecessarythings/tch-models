@@ -106,7 +106,7 @@ fn squeeze_excitation(p: nn::Path, c_in: i64, c_squeeze: i64) -> impl nn::Module
         .add(conv2d(&p / "fc1", c_in, c_squeeze, 1, Default::default()))
         .add_fn(|xs| xs.relu())
         .add(conv2d(&p / "fc2", c_squeeze, c_in, 1, Default::default()))
-        .add_fn(|xs| xs.sigmoid());
+        .add_fn(|xs| xs.hardsigmoid());
     nn::func_t(move |xs, train| xs * xs.apply_t(&scale, train))
 }
 
