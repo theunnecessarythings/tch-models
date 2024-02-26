@@ -268,7 +268,7 @@ fn relative_positional_multi_head_attention(
 
     let rpi = get_relative_position_index(size, size);
     let mut relative_position_index = p.ones_no_train("relative_position_index", &rpi.size());
-    // relative_position_index.copy_(&rpi);
+    relative_position_index.copy_(&rpi);
 
     nn::func_t(move |xs, _| {
         let (b, g, p, d) = xs.size4().unwrap();
