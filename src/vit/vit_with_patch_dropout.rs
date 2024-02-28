@@ -1,12 +1,28 @@
-use tch::{nn, IndexOp, Tensor};
+use tch::{nn, Kind, Tensor};
+
+fn patch_dropout_block(prob: f64) -> impl nn::ModuleT {
+    nn::func_t(move |xs, train| {
+        if !train || prob == 0. {
+            return xs.shallow_clone();
+        }
+        let (b, n, _) = xs.size3().unwrap();
+        let batch_indices = Tensor::arange(b, (Kind::Int64, xs.device())).unsqueeze(-1);
+        let num_patches_keep = i64::max(1, ((1. - prob) * n as f64) as i64);
+        let patch_indices_keep = Tensor::randn([b, n], (Kind::Float, xs.device()))
+            .topk(num_patches_keep, -1, true, true)
+            .1;
+        xs.index_select(0, &batch_indices)
+            .index_select(1, &patch_indices_keep)
+    })
+}
 
 fn feed_forward(p: nn::Path, dim: i64, hidden_dim: i64, dropout: f64) -> impl nn::ModuleT {
-    let p = &p / "net";
+    let q = &p / "net";
     nn::seq_t()
-        .add(nn::layer_norm(&p / 0, vec![dim], Default::default()))
-        .add(nn::linear(&p / 1, dim, hidden_dim, Default::default()))
+        .add(nn::layer_norm(&q / 0, vec![dim], Default::default()))
+        .add(nn::linear(&q / 1, dim, hidden_dim, Default::default()))
         .add_fn_t(move |xs, train| xs.gelu("none").dropout(dropout, train))
-        .add(nn::linear(&p / 4, hidden_dim, dim, Default::default()))
+        .add(nn::linear(&q / 4, hidden_dim, dim, Default::default()))
         .add_fn_t(move |xs, train| xs.dropout(dropout, train))
 }
 
@@ -35,7 +51,6 @@ fn attention(p: nn::Path, dim: i64, heads: i64, head_dim: i64, dropout: f64) -> 
             ))
             .add_fn_t(move |xs, train| xs.dropout(dropout, train));
     }
-
     nn::func_t(move |xs, train| {
         let qkv = xs
             .apply(&norm)
@@ -50,7 +65,7 @@ fn attention(p: nn::Path, dim: i64, heads: i64, head_dim: i64, dropout: f64) -> 
         let (q, k, v) = (&qkv[0], &qkv[1], &qkv[2]);
         let dots = q.matmul(&k.transpose(-1, -2)) * scale;
         let out = dots
-            .softmax(-1, tch::Kind::Float)
+            .softmax(-1, Kind::Float)
             .dropout(dropout, train)
             .matmul(v);
         out.transpose(1, 2)
@@ -91,38 +106,44 @@ pub enum Pool {
     Mean,
 }
 
-pub fn vit_1d(
+pub fn vit_with_patch_dropout(
     p: &nn::Path,
-    seq_len: i64,
-    patch_size: i64,
+    image_size: (i64, i64),
+    patch_size: (i64, i64),
     num_classes: i64,
     dim: i64,
     depth: i64,
     heads: i64,
     mlp_dim: i64,
+    pool: Pool,
     channels: i64,
     head_dim: i64,
     dropout: f64,
     emb_dropout: f64,
+    patch_dropout: f64,
 ) -> impl nn::ModuleT {
-    assert!(seq_len % patch_size == 0);
-    let num_patches = seq_len / patch_size;
-    let patch_dim = channels * patch_size;
+    let (h, w) = image_size;
+    let (ph, pw) = patch_size;
+    assert!(
+        h % ph == 0 && w % pw == 0,
+        "Image dimensions must be divisible by the patch size.",
+    );
+
+    let num_patches = (h / ph) * (w / pw);
+    let patch_dim = channels * ph * pw;
 
     let q = p / "to_patch_embedding";
-    let to_patch_embedding = nn::seq_t()
+    let to_patch_embedding = nn::seq()
         .add_fn(move |xs| {
-            xs.view([-1, channels, num_patches, patch_size])
-                .permute([0, 2, 3, 1])
-                .reshape([-1, num_patches, patch_dim])
+            xs.view([-1, xs.size()[1], h / ph, ph, w / pw, pw])
+                .permute([0, 2, 4, 3, 5, 1])
+                .contiguous()
+                .view([-1, (h / ph) * (w / pw), patch_dim])
         })
-        .add(nn::layer_norm(&q / 1, vec![patch_dim], Default::default()))
-        .add(nn::linear(&q / 2, patch_dim, dim, Default::default()))
-        .add(nn::layer_norm(&q / 3, vec![dim], Default::default()));
-
+        .add(nn::linear(&q / 1, patch_dim, dim, Default::default()));
     let pos_embedding = p.var(
         "pos_embedding",
-        &[1, num_patches + 1, dim],
+        &[num_patches, dim],
         nn::Init::Randn {
             mean: 0.0,
             stdev: 1.0,
@@ -130,12 +151,13 @@ pub fn vit_1d(
     );
     let cls_token = p.var(
         "cls_token",
-        &[dim],
+        &[1, 1, dim],
         nn::Init::Randn {
             mean: 0.0,
             stdev: 1.0,
         },
     );
+    let patch_dropout = patch_dropout_block(patch_dropout);
 
     let transformer = transformer(
         p / "transformer",
@@ -147,27 +169,25 @@ pub fn vit_1d(
         dropout,
     );
 
-    let mlp_head = nn::seq_t()
-        .add(nn::layer_norm(
-            p / "mlp_head" / 0,
-            vec![dim],
-            Default::default(),
-        ))
-        .add(nn::linear(
-            p / "mlp_head" / 1,
-            dim,
-            num_classes,
-            Default::default(),
-        ));
+    let q = p / "mlp_head";
+    let mlp_head = nn::seq()
+        .add(nn::layer_norm(&q / 0, vec![dim], Default::default()))
+        .add(nn::linear(&q / 1, dim, num_classes, Default::default()));
 
     nn::func_t(move |xs, train| {
         let mut ys = xs.apply_t(&to_patch_embedding, train);
-        let (b, n, _) = ys.size3().unwrap();
+        let (b, _, _) = ys.size3().unwrap();
+        ys += &pos_embedding;
+        ys = ys.apply_t(&patch_dropout, train);
 
-        let cls_tokens = cls_token.repeat([b, 1]);
-        ys = Tensor::cat(&[cls_tokens.unsqueeze(1), ys], 1);
-        ys += pos_embedding.i((.., ..(n + 1)));
-        ys = ys.dropout(emb_dropout, train).apply_t(&transformer, train);
-        ys.i((.., 0)).apply_t(&mlp_head, train)
+        let cls_tokens = cls_token.repeat([b, 1, 1]);
+        ys = Tensor::cat(&[cls_tokens, ys], 1)
+            .dropout(emb_dropout, train)
+            .apply_t(&transformer, train);
+        match pool {
+            Pool::Cls => ys.select(1, 0),
+            Pool::Mean => ys.mean_dim(1, false, Kind::Float),
+        }
+        .apply(&mlp_head)
     })
 }

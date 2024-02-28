@@ -1,6 +1,7 @@
 use tch::{nn, IndexOp, Tensor};
 
 fn feed_forward(p: nn::Path, dim: i64, hidden_dim: i64, dropout: f64) -> impl nn::ModuleT {
+    let p = &p / "net";
     nn::seq_t()
         .add(nn::layer_norm(&p / 0, vec![dim], Default::default()))
         .add(nn::linear(&p / 1, dim, hidden_dim, Default::default()))
@@ -17,7 +18,7 @@ fn attention(p: nn::Path, dim: i64, heads: i64, head_dim: i64, dropout: f64) -> 
     let to_qkv = nn::linear(
         &p / "to_qkv",
         dim,
-        inner_dim,
+        inner_dim * 3,
         nn::LinearConfig {
             bias: false,
             ..Default::default()
@@ -53,7 +54,7 @@ fn attention(p: nn::Path, dim: i64, heads: i64, head_dim: i64, dropout: f64) -> 
             .dropout(dropout, train)
             .matmul(v);
         out.transpose(1, 2)
-            .reshape([-1, out.size()[1], inner_dim])
+            .reshape([-1, out.size()[2], inner_dim])
             .apply_t(&to_out, train)
     })
 }
@@ -67,8 +68,8 @@ fn transformer(
     mlp_dim: i64,
     dropout: f64,
 ) -> impl nn::ModuleT {
-    let norm = nn::layer_norm(&p / "norm", vec![dim], Default::default());
     let mut layers = vec![];
+    let p = p / "layers";
     for i in 0..depth {
         layers.push((
             attention(&p / i / 0, dim, heads, head_dim, dropout),
@@ -81,7 +82,7 @@ fn transformer(
             ys += ys.apply_t(attn, train);
             ys += ys.apply_t(ff, train);
         }
-        ys.apply(&norm)
+        ys
     })
 }
 
@@ -124,9 +125,22 @@ pub fn vit_3d(
     let q = p / "to_patch_embedding";
     let to_patch_embedding = nn::seq_t()
         .add_fn(move |xs| {
-            xs.reshape([-1, channels, frames, frame_patch_size, h, ph, w, pw])
-                .permute([0, 2, 4, 6, 5, 7, 3, 1])
-                .reshape([-1, frames * h * w, ph * pw * frame_patch_size * channels])
+            xs.reshape([
+                -1,
+                channels,
+                frames / frame_patch_size,
+                frame_patch_size,
+                h / ph,
+                ph,
+                w / pw,
+                pw,
+            ])
+            .permute([0, 2, 4, 6, 5, 7, 3, 1])
+            .reshape([
+                -1,
+                frames / frame_patch_size * h / ph * w / pw,
+                ph * pw * frame_patch_size * channels,
+            ])
         })
         .add(nn::layer_norm(&q / 1, vec![patch_dim], Default::default()))
         .add(nn::linear(&q / 2, patch_dim, dim, Default::default()))
