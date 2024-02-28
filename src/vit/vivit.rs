@@ -1,11 +1,12 @@
 use tch::{nn, IndexOp, Tensor};
 
 fn feed_forward(p: nn::Path, dim: i64, hidden_dim: i64, dropout: f64) -> impl nn::ModuleT {
+    let q = &p / "net";
     nn::seq_t()
-        .add(nn::layer_norm(&p / 0, vec![dim], Default::default()))
-        .add(nn::linear(&p / 1, dim, hidden_dim, Default::default()))
+        .add(nn::layer_norm(&q / 0, vec![dim], Default::default()))
+        .add(nn::linear(&q / 1, dim, hidden_dim, Default::default()))
         .add_fn_t(move |xs, train| xs.gelu("none").dropout(dropout, train))
-        .add(nn::linear(&p / 4, hidden_dim, dim, Default::default()))
+        .add(nn::linear(&q / 4, hidden_dim, dim, Default::default()))
         .add_fn_t(move |xs, train| xs.dropout(dropout, train))
 }
 
@@ -17,7 +18,7 @@ fn attention(p: nn::Path, dim: i64, heads: i64, head_dim: i64, dropout: f64) -> 
     let to_qkv = nn::linear(
         &p / "to_qkv",
         dim,
-        inner_dim,
+        inner_dim * 3,
         nn::LinearConfig {
             bias: false,
             ..Default::default()
@@ -53,7 +54,7 @@ fn attention(p: nn::Path, dim: i64, heads: i64, head_dim: i64, dropout: f64) -> 
             .dropout(dropout, train)
             .matmul(v);
         out.transpose(1, 2)
-            .reshape([-1, out.size()[1], inner_dim])
+            .reshape([-1, out.size()[2], inner_dim])
             .apply_t(&to_out, train)
     })
 }
@@ -74,10 +75,11 @@ fn transformer(
 ) -> impl nn::ModuleT {
     let norm = nn::layer_norm(&p / "norm", vec![dim], Default::default());
     let mut layers = vec![];
+    let q = &p / "layers";
     for i in 0..depth {
         layers.push((
-            attention(&p / i / 0, dim, heads, head_dim, dropout),
-            feed_forward(&p / i / 1, dim, mlp_dim, dropout),
+            attention(&q / i / 0, dim, heads, head_dim, dropout),
+            feed_forward(&q / i / 1, dim, mlp_dim, dropout),
         ));
     }
     nn::func_t(move |xs, train| {
@@ -199,19 +201,17 @@ pub fn vivit(
 
         ys = ys
             .dropout(emb_dropout, train)
-            .reshape([-1, n, dim])
+            .view([b * f, -1, dim])
             .apply_t(&spatial_transformer, train)
-            .reshape([b, f, n, dim]);
+            .reshape([b, f, -1, dim]);
 
         ys = match pool {
             Pool::Cls => ys.i((.., .., 0)),
             Pool::Mean => ys.mean_dim(2, false, tch::Kind::Float),
         };
         if let Some(temporal_cls_token) = &temporal_cls_token {
-            ys = Tensor::cat(
-                &[temporal_cls_token.repeat([b, 1, 1]), ys.i((.., .., 0))],
-                1,
-            );
+            let temporal_cls_tokens = temporal_cls_token.repeat([b, 1, 1]);
+            ys = Tensor::cat(&[temporal_cls_tokens, ys], 1);
         }
 
         ys = ys.apply_t(&temporal_transformer, train);
