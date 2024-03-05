@@ -6,11 +6,11 @@ use anyhow::Result;
 use imagenet::Transforms;
 use indicatif::ProgressIterator;
 use tch::{
-    nn::{self, ModuleT, VarStore},
+    nn::{self, VarStore},
     vision::imagenet::load_image_and_resize224,
-    Device, Kind, Tensor,
+    Kind, Tensor,
 };
-use tch_vision::{imagenet, models::Model};
+use tch_models::vision::{imagenet, models::Model};
 
 fn eval_imagenet(vs: &VarStore, model: Box<dyn nn::ModuleT>, transforms: Transforms) {
     let ds = imagenet::ImageNetDataset::new(PathBuf::from("."), transforms);
@@ -124,15 +124,19 @@ fn test_torchvision_models() -> Result<()> {
 
         let _guard = tch::no_grad_guard();
 
-        let (model, vs, transforms) = tch_vision::models::load_model(model)?;
-        let image = load_image_and_resize224("tiger.jpg")?
+        // Test with a single image
+        let (model, vs, transforms) = tch_models::vision::models::load_model(model, true)?;
+        let image = load_image_and_resize224("examples/vision/tiger.jpg")?
             .to_device(vs.device())
             .unsqueeze(0);
-        // let image = Tensor::ones([1, 3, 224, 224], (Kind::Float, vs.device()));
 
-        // let w = &vs.variables_.lock().unwrap().named_variables;
-        // let w = w.get("features.6.1.block.3.1.running_mean").unwrap();
-        // println!("{w}");
+        /*
+        let image = Tensor::ones([1, 3, 224, 224], (Kind::Float, vs.device()));
+
+        let w = &vs.variables_.lock().unwrap().named_variables;
+        let w = w.get("features.6.1.block.3.1.running_mean").unwrap();
+        println!("{w}");
+        */
 
         let output = model.forward_t(&image, false).softmax(-1, Kind::Float);
 
@@ -141,7 +145,7 @@ fn test_torchvision_models() -> Result<()> {
         }
         println!();
 
-        tch_vision::models::print_varstore(&vs);
+        // tch_models::vision::models::print_varstore(&vs);
 
         eval_imagenet(&vs, model, transforms);
     }
@@ -149,37 +153,6 @@ fn test_torchvision_models() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    // test_torchvision_models()?;
-    let _guard = tch::no_grad_guard();
-    let mut vs = VarStore::new(Device::cuda_if_available());
-
-    let model = tch_vision::vit::vit_3d::vit_3d(
-        &vs.root(),
-        (128, 128),
-        (16, 16),
-        16,
-        2,
-        1000,
-        1024,
-        6,
-        8,
-        64,
-        2048,
-        tch_vision::vit::vit_3d::Pool::Cls,
-        3,
-        0.1,
-        0.1,
-    );
-
-    vs.load("vit.safetensors")?;
-
-    let image = Tensor::ones([1, 3, 16, 128, 128], (Kind::Float, vs.device()));
-    let output = model.forward_t(&image, false);
-    println!("{output}");
-    let output = output.softmax(-1, Kind::Float);
-    for (probability, class) in tch::vision::imagenet::top(&output, 5).iter() {
-        println!("{:50} {:5.2}%", class, 100.0 * probability)
-    }
-
+    test_torchvision_models()?;
     Ok(())
 }

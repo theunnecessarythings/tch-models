@@ -117,20 +117,17 @@ fn conv_norm_activation(
             ..Default::default()
         },
     );
-    let s: Vec<&str> = p.components().collect();
-    let s = s.join(".");
 
     nn::func_t(move |xs, train| {
         let ys = xs.apply(&conv);
 
         let ys = ys.apply_t(&norm, train);
 
-        let ys = if activation { ys.silu() } else { ys };
-        // if s == "features.1.0.block.0" {
-        //     println!("{ys}");
-        // }
-
-        ys
+        if activation {
+            ys.silu()
+        } else {
+            ys
+        }
     })
 }
 

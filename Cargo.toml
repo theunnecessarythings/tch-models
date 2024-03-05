@@ -1,5 +1,5 @@
 [package]
-name = "tch-vision"
+name = "tch-models"
 version = "0.1.0"
 edition = "2021"
 
@@ -24,3 +24,7 @@ rustflags = ["-C", "target-cpu=native"]
 
 [profile.release]
 lto = true
+
+[[example]]
+name = "imagenet-eval"
+path = "examples/vision/imagenet_eval.rs"

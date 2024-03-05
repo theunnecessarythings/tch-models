@@ -1,9 +1,12 @@
+pub mod simple_vit;
 pub mod simple_vit_1d;
 pub mod simple_vit_3d;
 pub mod simple_vit_with_fft;
 pub mod simple_vit_with_patch_dropout;
 pub mod simple_vit_with_qk_norm;
 pub mod simple_vit_with_register_tokens;
+pub mod t2t;
+pub mod twins_svt;
 pub mod vit;
 pub mod vit_1d;
 pub mod vit_3d;
@@ -11,3 +14,4 @@ pub mod vit_for_small_dataset;
 pub mod vit_with_patch_dropout;
 pub mod vit_with_patch_merger;
 pub mod vivit;
+// pub mod xcit;

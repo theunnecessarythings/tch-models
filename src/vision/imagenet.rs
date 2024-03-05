@@ -1,6 +1,6 @@
 use ai_dataloader::{Dataset, GetSample, Len};
 use image::{self, GenericImageView};
-use ndarray::{azip, s, Array3, ArrayBase};
+use ndarray::{azip, s, Array3};
 use nshare::ToNdarray3;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs::File, io::Read, path::PathBuf};
@@ -48,11 +48,11 @@ pub struct ImageNetDataset {
 
 impl ImageNetDataset {
     pub fn new(root_dir: PathBuf, transforms: Transforms) -> Self {
-        let mut file = File::open("imagenet_val.json").expect("file not found");
+        let mut file = File::open("examples/vision/imagenet_val.json").expect("imagenet_val.json file not found");
         let mut content = String::new();
         file.read_to_string(&mut content)
-            .expect("something went wrong reading the file");
-        let metadata = serde_json::from_str(&content).expect("JSON was not well-formatted");
+            .expect("Something went wrong reading the file, imagenet_val.json");
+        let metadata = serde_json::from_str(&content).expect("imagenet_val.json, was not well-formatted");
         ImageNetDataset {
             root_dir,
             metadata,
@@ -74,19 +74,21 @@ impl GetSample for ImageNetDataset {
         let resize_size = self.transforms.resize_size;
         let crop_size = self.transforms.crop_size;
         let mean = self.transforms.mean;
-        let mean = vec![mean.0, mean.1, mean.2];
+        let mean = [mean.0, mean.1, mean.2];
         let std = self.transforms.std;
-        let std = vec![std.0, std.1, std.2];
+        let vec = [std.0, std.1, std.2];
+        let std = vec;
 
         let (path, label) = &self.metadata.samples[idx];
-        let img = image::open(&self.root_dir.join(path))
-            .unwrap()
+
+        let img = image::open(self.root_dir.join(path))
+            .unwrap_or_else(|_| 
+                panic!("{:?} not found, make sure you have the correct path and imagenet dataset downloaded", self.root_dir.join(path)))
             .resize_to_fill(
                 resize_size,
                 resize_size,
                 self.transforms.interpolation,
             );
-
         // CenterCrop
         let (width, height) = img.dimensions();
         let start_x = if width > crop_size {
