@@ -1230,7 +1230,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tch-vision"
+name = "tch-models"
 version = "0.1.0"
 dependencies = [
  "ai-dataloader",

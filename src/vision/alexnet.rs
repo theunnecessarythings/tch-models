@@ -29,31 +29,6 @@ fn features(p: nn::Path) -> impl ModuleT {
         .add_fn(|xs| max_pool2d(xs.relu(), 3, 2))
 }
 
-// fn features(p: nn::Path) -> impl nn::ModuleT {
-//     let conv1 = conv2d(&p / "0", 3, 64, 11, 2, 4);
-//     let conv2 = conv2d(&p / "3", 64, 192, 5, 2, 1);
-//     let conv3 = conv2d(&p / "6", 192, 384, 3, 1, 1);
-//     let conv4 = conv2d(&p / "8", 384, 256, 3, 1, 1);
-//     let conv5 = conv2d(&p / "10", 256, 256, 3, 1, 1);
-//     nn::func_t(move |xs, _train| {
-//         let ys = xs
-//             .apply(&conv1)
-//             .relu()
-//             .max_pool2d(3, 2, 0, 1, false)
-//             .apply(&conv2)
-//             .relu();
-//         println!("{ys}");
-//         ys.max_pool2d(3, 2, 0, 1, false)
-//             .apply(&conv3)
-//             .relu()
-//             .apply(&conv4)
-//             .relu()
-//             .apply(&conv5)
-//             .relu()
-//             .max_pool2d(3, 2, 0, 1, false)
-//     })
-// }
-
 fn classifier(p: nn::Path, nclasses: i64) -> impl ModuleT {
     nn::seq_t()
         .add_fn_t(|xs, train| xs.dropout(0.5, train))
