@@ -1,3 +1,8 @@
+/*
+* Ported from TorchVision Inception model.
+* Inception V3 model architecture from
+* `Rethinking the Inception Architecture for Computer Vision <https://arxiv.org/abs/1512.00567>`_.
+*/
 use tch::{nn, IndexOp, Tensor};
 
 fn basic_conv2d(
@@ -18,10 +23,21 @@ fn basic_conv2d(
                 padding,
                 stride,
                 bias: false,
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.1,
+                },
                 ..Default::default()
             },
         ))
-        .add(nn::batch_norm2d(&p / "bn", c_out, Default::default()))
+        .add(nn::batch_norm2d(
+            &p / "bn",
+            c_out,
+            nn::BatchNormConfig {
+                ws_init: nn::Init::Const(1.0),
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.relu())
 }
 
@@ -39,6 +55,7 @@ fn basic_conv2d2(
     };
     let bn_cfg = nn::BatchNormConfig {
         eps: 0.001,
+        ws_init: nn::Init::Const(1.0),
         ..Default::default()
     };
     nn::seq_t()
@@ -207,7 +224,18 @@ fn inception_e(p: nn::Path, c_in: i64) -> impl nn::ModuleT {
 fn inception_aux(p: nn::Path, c_in: i64, num_classes: i64) -> impl nn::ModuleT {
     let conv0 = basic_conv2d(&p / "conv0", c_in, 128, 1, 1, 0);
     let conv1 = basic_conv2d(&p / "conv1", 128, 768, 5, 1, 0);
-    let fc = nn::linear(&p / "fc", 768, num_classes, Default::default());
+    let fc = nn::linear(
+        &p / "fc",
+        768,
+        num_classes,
+        nn::LinearConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.001,
+            },
+            ..Default::default()
+        },
+    );
 
     nn::func_t(move |xs, train| {
         let xs = xs.avg_pool2d([5, 5], [3, 3], [0, 0], false, true, None);
@@ -258,7 +286,18 @@ fn inception3(
                 .dropout(dropout, train)
                 .flat_view()
         })
-        .add(nn::linear(p / "fc", 2048, num_classes, Default::default()))
+        .add(nn::linear(
+            p / "fc",
+            2048,
+            num_classes,
+            nn::LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.1,
+                },
+                ..Default::default()
+            },
+        ))
 }
 
 pub fn inception_v3(p: &nn::Path, num_classes: i64) -> impl nn::ModuleT {

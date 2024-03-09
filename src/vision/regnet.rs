@@ -1,3 +1,8 @@
+/* Ported from torch vision library
+ * RegNet model architecture from
+ * `Designing Network Design Spaces <https://arxiv.org/abs/2003.13678>`_.
+ */
+
 use std::collections::HashSet;
 
 use tch::nn::{self, batch_norm2d, conv2d, BatchNormConfig, ConvConfig};
@@ -44,10 +49,22 @@ fn conv_norm_activation(
                 padding,
                 bias: false,
                 dilation,
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Normal,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::ReLU,
+                },
                 ..Default::default()
             },
         ))
-        .add(batch_norm2d(&p / 1, c_out, BatchNormConfig::default()))
+        .add(batch_norm2d(
+            &p / 1,
+            c_out,
+            BatchNormConfig {
+                ws_init: nn::Init::Const(1.0),
+                ..Default::default()
+            },
+        ))
         .add_fn(move |xs| match activation {
             Activation::Relu => xs.relu(),
             Activation::None => xs.shallow_clone(),
@@ -66,9 +83,35 @@ fn simple_stem_in(
 fn squeeze_excitation(p: nn::Path, c_in: i64, c_squeeze: i64) -> impl nn::ModuleT {
     let scale = nn::seq_t()
         .add_fn(|xs| xs.adaptive_avg_pool2d([1, 1]))
-        .add(conv2d(&p / "fc1", c_in, c_squeeze, 1, Default::default()))
+        .add(conv2d(
+            &p / "fc1",
+            c_in,
+            c_squeeze,
+            1,
+            ConvConfig {
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Normal,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::ReLU,
+                },
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.relu())
-        .add(conv2d(&p / "fc2", c_squeeze, c_in, 1, Default::default()))
+        .add(conv2d(
+            &p / "fc2",
+            c_squeeze,
+            c_in,
+            1,
+            ConvConfig {
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Normal,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::ReLU,
+                },
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.sigmoid());
     nn::func_t(move |xs, train| xs * xs.apply_t(&scale, train))
 }
@@ -351,7 +394,18 @@ fn regnet(
         ));
         current_width = *width;
     }
-    let fc = nn::linear(p / "fc", current_width, num_classes, Default::default());
+    let fc = nn::linear(
+        p / "fc",
+        current_width,
+        num_classes,
+        nn::LinearConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.01,
+            },
+            ..Default::default()
+        },
+    );
 
     nn::func_t(move |xs, train| {
         xs.apply_t(&stem, train)

@@ -1,3 +1,9 @@
+/* Ported from TorchVision MobileNetV2 model.
+ * MobileNetV2 model architecture from
+ * `Inverted Residuals and Linear Bottlenecks: Mobile Networks for Classification, Detection and Segmentation
+ * <https://arxiv.org/abs/1801.04381>`_.
+ */
+
 use tch::nn::{self, batch_norm2d, conv2d, BatchNormConfig, ConvConfig};
 
 fn make_divisible(v: f64, divisor: i64, min_value: Option<i64>) -> i64 {
@@ -33,10 +39,22 @@ fn conv_norm_activation(
                 groups,
                 padding,
                 bias: false,
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Normal,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::ReLU,
+                },
                 ..Default::default()
             },
         ))
-        .add(batch_norm2d(&p / 1, c_out, BatchNormConfig::default()))
+        .add(batch_norm2d(
+            &p / 1,
+            c_out,
+            BatchNormConfig {
+                ws_init: nn::Init::Const(1.0),
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.relu6())
 }
 fn inverted_residual(
@@ -71,10 +89,22 @@ fn inverted_residual(
             1,
             ConvConfig {
                 bias: false,
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Normal,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::ReLU,
+                },
                 ..Default::default()
             },
         ))
-        .add(batch_norm2d(&p / (idx + 2), c_out, Default::default()));
+        .add(batch_norm2d(
+            &p / (idx + 2),
+            c_out,
+            BatchNormConfig {
+                ws_init: nn::Init::Const(1.0),
+                ..Default::default()
+            },
+        ));
 
     nn::func_t(move |xs, train| {
         if use_res_connect {
@@ -127,7 +157,13 @@ fn mobilenet(
         p / "classifier" / 1,
         last_channel,
         num_classes,
-        Default::default(),
+        nn::LinearConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.01,
+            },
+            ..Default::default()
+        },
     );
     nn::func_t(move |xs, train| {
         xs.apply_t(&layers, train)

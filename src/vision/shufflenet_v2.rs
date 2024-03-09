@@ -1,3 +1,10 @@
+/* Model Ported from torchvision
+* ShuffleNet V2 model architecture from
+* `ShuffleNet V2: Practical Guidelines for Efficient CNN Architecture Design <https://arxiv.org/abs/1807.11164>`_.
+*
+* The implementation is based on PyTorch's implementation of ShuffleNet V2.
+*/
+
 use tch::{
     nn::{self, ConvConfig},
     Tensor,

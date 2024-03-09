@@ -1,3 +1,8 @@
+/* Ported from TorchVision ResNet model.
+ * ResNet model architecture from
+ * `Deep Residual Learning for Image Recognition <https://arxiv.org/abs/1512.03385>`_.
+ */
+
 use tch::nn::{self, ConvConfig};
 
 fn conv3x3(
@@ -19,6 +24,11 @@ fn conv3x3(
             groups,
             bias: false,
             dilation,
+            ws_init: nn::Init::Kaiming {
+                dist: nn::init::NormalOrUniform::Normal,
+                fan: nn::init::FanInOut::FanOut,
+                non_linearity: nn::init::NonLinearity::ReLU,
+            },
             ..Default::default()
         },
     )
@@ -34,6 +44,11 @@ fn conv1x1(p: nn::Path, c_in: i64, c_out: i64, stride: i64) -> impl nn::Module {
             stride,
             padding: 0,
             bias: false,
+            ws_init: nn::Init::Kaiming {
+                dist: nn::init::NormalOrUniform::Normal,
+                fan: nn::init::FanInOut::FanOut,
+                non_linearity: nn::init::NonLinearity::ReLU,
+            },
             ..Default::default()
         },
     )
@@ -41,9 +56,23 @@ fn conv1x1(p: nn::Path, c_in: i64, c_out: i64, stride: i64) -> impl nn::Module {
 
 fn basic_block(p: nn::Path, c_in: i64, c_out: i64, stride: i64) -> impl nn::ModuleT {
     let conv1 = conv3x3(&p / "conv1", c_in, c_out, stride, 1, 1);
-    let bn1 = nn::batch_norm2d(&p / "bn1", c_out, Default::default());
+    let bn1 = nn::batch_norm2d(
+        &p / "bn1",
+        c_out,
+        nn::BatchNormConfig {
+            ws_init: nn::Init::Const(1.),
+            ..Default::default()
+        },
+    );
     let conv2 = conv3x3(&p / "conv2", c_out, c_out, 1, 1, 1);
-    let bn2 = nn::batch_norm2d(&p / "bn2", c_out, Default::default());
+    let bn2 = nn::batch_norm2d(
+        &p / "bn2",
+        c_out,
+        nn::BatchNormConfig {
+            ws_init: nn::Init::Const(1.),
+            ..Default::default()
+        },
+    );
 
     let downsample = if stride != 1 || (c_in != c_out) {
         nn::seq_t()
@@ -51,7 +80,10 @@ fn basic_block(p: nn::Path, c_in: i64, c_out: i64, stride: i64) -> impl nn::Modu
             .add(nn::batch_norm2d(
                 &p / "downsample" / 1,
                 c_out,
-                Default::default(),
+                nn::BatchNormConfig {
+                    ws_init: nn::Init::Const(1.),
+                    ..Default::default()
+                },
             ))
     } else {
         nn::seq_t()
@@ -80,11 +112,32 @@ fn bottleneck(
 ) -> impl nn::ModuleT {
     let width = (c_out as f64 * (base_width as f64 / 64.)).round() as i64 * groups;
     let conv1 = conv1x1(&p / "conv1", c_in, width, 1);
-    let bn1 = nn::batch_norm2d(&p / "bn1", width, Default::default());
+    let bn1 = nn::batch_norm2d(
+        &p / "bn1",
+        width,
+        nn::BatchNormConfig {
+            ws_init: nn::Init::Const(1.),
+            ..Default::default()
+        },
+    );
     let conv2 = conv3x3(&p / "conv2", width, width, stride, groups, 1);
-    let bn2 = nn::batch_norm2d(&p / "bn2", width, Default::default());
+    let bn2 = nn::batch_norm2d(
+        &p / "bn2",
+        width,
+        nn::BatchNormConfig {
+            ws_init: nn::Init::Const(1.),
+            ..Default::default()
+        },
+    );
     let conv3 = conv1x1(&p / "conv3", width, c_out * 4, 1);
-    let bn3 = nn::batch_norm2d(&p / "bn3", c_out * 4, Default::default());
+    let bn3 = nn::batch_norm2d(
+        &p / "bn3",
+        c_out * 4,
+        nn::BatchNormConfig {
+            ws_init: nn::Init::Const(1.),
+            ..Default::default()
+        },
+    );
 
     let downsample = if stride != 1 || (c_in != c_out * 4) {
         nn::seq_t()
@@ -92,7 +145,10 @@ fn bottleneck(
             .add(nn::batch_norm2d(
                 &p / "downsample" / 1,
                 c_out * 4,
-                Default::default(),
+                nn::BatchNormConfig {
+                    ws_init: nn::Init::Const(1.),
+                    ..Default::default()
+                },
             ))
     } else {
         nn::seq_t()
@@ -141,10 +197,23 @@ fn resnet(
             stride: 2,
             padding: 3,
             bias: false,
+            ws_init: nn::Init::Kaiming {
+                dist: nn::init::NormalOrUniform::Normal,
+                fan: nn::init::FanInOut::FanOut,
+                non_linearity: nn::init::NonLinearity::ReLU,
+            },
             ..Default::default()
         },
     );
-    let bn1 = nn::batch_norm2d(p / "bn1", c_in, Default::default());
+
+    let bn1 = nn::batch_norm2d(
+        p / "bn1",
+        c_in,
+        nn::BatchNormConfig {
+            ws_init: nn::Init::Const(1.),
+            ..Default::default()
+        },
+    );
     let layer1 = make_layer(
         p / "layer1",
         &block,

@@ -1,3 +1,8 @@
+/* Ported from torchvision
+* SqueezeNet model architecture from
+* `SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB model size <https://arxiv.org/abs/1602.07360>`_.
+*/
+
 use tch::{
     nn::{self, ConvConfig},
     Tensor,
@@ -100,7 +105,13 @@ fn squeeze_net(
         512,
         num_classes,
         1,
-        Default::default(),
+        ConvConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.01,
+            },
+            ..Default::default()
+        },
     );
     nn::seq_t().add_fn_t(move |xs, train| {
         xs.apply_t(&features, train)

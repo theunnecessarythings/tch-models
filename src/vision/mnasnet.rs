@@ -1,5 +1,10 @@
+/* Ported from TorchVision MnasNet model.
+ * Adapted from """MnasNet: Platform-Aware Neural Architecture Search for Mobile"""
+ * <https://arxiv.org/abs/1807.11626>`_.
+ */
+
 use tch::{
-    nn::{self, batch_norm2d, conv2d, BatchNormConfig, ConvConfig},
+    nn::{self, batch_norm2d, conv2d, init::DEFAULT_KAIMING_NORMAL, BatchNormConfig, ConvConfig},
     Kind,
 };
 
@@ -152,6 +157,7 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
                 stride: 2,
                 padding: 1,
                 bias: false,
+                ws_init: DEFAULT_KAIMING_NORMAL,
                 ..Default::default()
             },
         ))
@@ -160,6 +166,7 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
             depths[0],
             BatchNormConfig {
                 momentum: bn_momentum,
+                ws_init: nn::Init::Const(1.0),
                 ..Default::default()
             },
         ))
@@ -174,6 +181,7 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
                 padding: 1,
                 groups: depths[0],
                 bias: false,
+                ws_init: DEFAULT_KAIMING_NORMAL,
                 ..Default::default()
             },
         ))
@@ -182,6 +190,7 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
             depths[0],
             BatchNormConfig {
                 momentum: bn_momentum,
+                ws_init: nn::Init::Const(1.0),
                 ..Default::default()
             },
         ))
@@ -195,6 +204,7 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
                 stride: 1,
                 padding: 0,
                 bias: false,
+                ws_init: DEFAULT_KAIMING_NORMAL,
                 ..Default::default()
             },
         ))
@@ -203,6 +213,7 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
             depths[1],
             BatchNormConfig {
                 momentum: bn_momentum,
+                ws_init: nn::Init::Const(1.0),
                 ..Default::default()
             },
         ))
@@ -257,6 +268,7 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
                 stride: 1,
                 padding: 0,
                 bias: false,
+                ws_init: DEFAULT_KAIMING_NORMAL,
                 ..Default::default()
             },
         ))
@@ -265,6 +277,7 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
             1280,
             BatchNormConfig {
                 momentum: bn_momentum,
+                ws_init: nn::Init::Const(1.0),
                 ..Default::default()
             },
         ))
@@ -275,7 +288,14 @@ fn mnasnet(p: &nn::Path, alpha: f64, num_classes: i64, dropout: f64) -> impl nn:
             p / "classifier" / 1,
             1280,
             num_classes,
-            Default::default(),
+            nn::LinearConfig {
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Uniform,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::Sigmoid,
+                },
+                ..Default::default()
+            },
         ));
     nn::func_t(move |xs, train| {
         let ys = xs.apply_t(&layers, train);

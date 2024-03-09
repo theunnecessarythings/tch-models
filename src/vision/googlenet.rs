@@ -1,3 +1,9 @@
+/*
+* Ported from TorchVision GoogLeNet model.
+* GoogLeNet model architecture from
+* `Going Deeper with Convolutions <https://arxiv.org/abs/1409.4842>`_.
+*/
+
 use tch::{nn, IndexOp, Tensor};
 
 fn basic_conv2d(
@@ -17,11 +23,22 @@ fn basic_conv2d(
             nn::ConvConfig {
                 padding,
                 stride,
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.01,
+                },
                 bias: false,
                 ..Default::default()
             },
         ))
-        .add(nn::batch_norm2d(&p / "bn", c_out, Default::default()))
+        .add(nn::batch_norm2d(
+            &p / "bn",
+            c_out,
+            nn::BatchNormConfig {
+                ws_init: nn::Init::Const(1.0),
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.relu())
 }
 

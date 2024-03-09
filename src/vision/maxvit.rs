@@ -1,3 +1,7 @@
+/* Ported from TorchVision MaxViT model.
+* MaxViT: Multi-Axis Vision Transformer
+* <https://arxiv.org/abs/2204.01697>
+*/
 use std::ops::{AddAssign, MulAssign};
 
 use tch::{
@@ -57,6 +61,10 @@ fn conv_norm_activation(
             groups: cfg.groups,
             bias,
             dilation: cfg.dilation,
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
             ..Default::default()
         },
     ));
@@ -69,6 +77,7 @@ fn conv_norm_activation(
                     BatchNormConfig {
                         eps: 1e-3,
                         momentum: 0.99,
+                        ws_init: nn::Init::Const(1.0),
                         ..Default::default()
                     },
                 ));
@@ -85,8 +94,32 @@ fn conv_norm_activation(
 }
 
 fn squeeze_excitation(p: nn::Path, c_in: i64, c_squeeze: i64) -> impl nn::ModuleT {
-    let fc1 = conv2d(&p / "fc1", c_in, c_squeeze, 1, Default::default());
-    let fc2 = conv2d(&p / "fc2", c_squeeze, c_in, 1, Default::default());
+    let fc1 = conv2d(
+        &p / "fc1",
+        c_in,
+        c_squeeze,
+        1,
+        nn::ConvConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
+            ..Default::default()
+        },
+    );
+    let fc2 = conv2d(
+        &p / "fc2",
+        c_squeeze,
+        c_in,
+        1,
+        nn::ConvConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
+            ..Default::default()
+        },
+    );
     nn::func_t(move |xs, _| {
         let scale = xs
             .adaptive_avg_pool2d([1, 1])
@@ -142,9 +175,33 @@ fn mbconv(
         if stride == 2 {
             proj = proj
                 .add_fn(move |xs| xs.avg_pool2d(3, stride, 1, false, true, None))
-                .add(conv2d(&p / "proj" / 1, c_in, c_out, 1, Default::default()));
+                .add(conv2d(
+                    &p / "proj" / 1,
+                    c_in,
+                    c_out,
+                    1,
+                    nn::ConvConfig {
+                        ws_init: nn::Init::Randn {
+                            mean: 0.0,
+                            stdev: 0.02,
+                        },
+                        ..Default::default()
+                    },
+                ));
         } else {
-            proj = proj.add(conv2d(&p / "proj" / 0, c_in, c_out, 1, Default::default()));
+            proj = proj.add(conv2d(
+                &p / "proj" / 0,
+                c_in,
+                c_out,
+                1,
+                nn::ConvConfig {
+                    ws_init: nn::Init::Randn {
+                        mean: 0.0,
+                        stdev: 0.02,
+                    },
+                    ..Default::default()
+                },
+            ));
         }
     }
 
@@ -157,6 +214,7 @@ fn mbconv(
         BatchNormConfig {
             eps: 1e-3,
             momentum: 0.99,
+            ws_init: nn::Init::Const(1.0),
             ..Default::default()
         },
     );
@@ -190,7 +248,13 @@ fn mbconv(
         c_mid,
         c_out,
         1,
-        Default::default(),
+        nn::ConvConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
+            ..Default::default()
+        },
     );
     let stoch_depth = stochastic_depth(p_stochastic_dropout, StochasticDepthKind::Row);
 
@@ -245,7 +309,13 @@ fn relative_positional_multi_head_attention(
         &p / "to_qkv",
         feat_dim,
         n_heads * head_dim * 3,
-        Default::default(),
+        LinearConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
+            ..Default::default()
+        },
     );
 
     let scale_factor = (feat_dim as f64).powf(-0.5);
@@ -254,7 +324,13 @@ fn relative_positional_multi_head_attention(
         &p / "merge",
         n_heads * head_dim,
         feat_dim,
-        Default::default(),
+        LinearConfig {
+            ws_init: nn::Init::Randn {
+                mean: 0.0,
+                stdev: 0.02,
+            },
+            ..Default::default()
+        },
     );
 
     let relative_position_bias_table = p.var(
@@ -362,14 +438,26 @@ fn partition_attention_layer(
             &p / "mlp_layer" / 1,
             c_in,
             c_in * mlp_ratio,
-            Default::default(),
+            LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
+                ..Default::default()
+            },
         ))
         .add_fn(|xs| xs.gelu("none"))
         .add(linear(
             &p / "mlp_layer" / 3,
             c_in * mlp_ratio,
             c_in,
-            Default::default(),
+            LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
+                ..Default::default()
+            },
         ))
         .add_fn_t(move |xs, train| xs.dropout(mlp_dropout, train));
 
@@ -585,7 +673,18 @@ fn max_vit(
             vec![dim],
             Default::default(),
         ))
-        .add(linear(p / "classifier" / 3, dim, dim, Default::default()))
+        .add(linear(
+            p / "classifier" / 3,
+            dim,
+            dim,
+            LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.tanh())
         .add(linear(
             p / "classifier" / 5,
@@ -593,6 +692,10 @@ fn max_vit(
             num_classes,
             LinearConfig {
                 bias: false,
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
                 ..Default::default()
             },
         ));

@@ -1,5 +1,14 @@
-//! AlexNet.
-//! <https://arxiv.org/abs/1404.5997>
+/*
+* Ported from TorchVision AlexNet model.
+* AlexNet model architecture from `One weird trick for
+* parallelizing convolutional neural networks <https://arxiv.org/abs/1404.5997>`__.
+*
+* AlexNet was originally introduced in the `ImageNet Classification with
+* Deep Convolutional Neural Networks
+* <https://papers.nips.cc/paper/2012/hash/c399862d3b9d6b76c8436e924a68c45b-Abstract.html>`__
+* paper. Our implementation is based instead on the "One weird trick"
+* paper above.*/
+
 use tch::{nn, nn::Conv2D, nn::ModuleT, Tensor};
 
 fn conv2d(p: nn::Path, c_in: i64, c_out: i64, ksize: i64, padding: i64, stride: i64) -> Conv2D {

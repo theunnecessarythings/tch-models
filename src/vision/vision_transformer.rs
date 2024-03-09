@@ -1,3 +1,8 @@
+/* Ported from PyTorch TorchVision model.
+* Vision Transformer model architecture from
+* `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale <https://arxiv.org/abs/2010.11929>`_.
+*/
+
 use tch::{
     nn::{self, conv2d, layer_norm, linear, ConvConfig, LayerNormConfig},
     IndexOp, Kind, Tensor,
@@ -193,4 +198,3 @@ pub fn vit_l_32(p: &nn::Path, num_classes: i64) -> impl nn::ModuleT {
 pub fn vit_h_14(p: &nn::Path, num_classes: i64) -> impl nn::ModuleT {
     vision_transformer(p, 224, 14, 32, 16, 1280, 5120, 0.0, num_classes)
 }
-

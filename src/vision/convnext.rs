@@ -1,3 +1,8 @@
+/*
+* Ported from torchvision library.
+* Adapted from """ConvNeXt Base model architecture from the
+* `A ConvNet for the 2020s <https://arxiv.org/abs/2201.03545>`_ paper.
+*/
 use tch::{
     nn::{self, LayerNormConfig, LinearConfig},
     Tensor,
@@ -63,6 +68,10 @@ fn cn_block(
             nn::ConvConfig {
                 padding: 3,
                 groups: dim,
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
                 ..Default::default()
             },
         ))
@@ -72,9 +81,33 @@ fn cn_block(
             vec![dim],
             LayerNormConfig::default(),
         ))
-        .add(nn::linear(&p / 3, dim, 4 * dim, LinearConfig::default()))
+        .add(nn::linear(
+            &p / 3,
+            dim,
+            4 * dim,
+            LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
+                bs_init: Some(nn::Init::Const(0.0)),
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.gelu("none"))
-        .add(nn::linear(&p / 5, 4 * dim, dim, LinearConfig::default()))
+        .add(nn::linear(
+            &p / 5,
+            4 * dim,
+            dim,
+            LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
+                bs_init: Some(nn::Init::Const(0.0)),
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.permute([0, 3, 1, 2]));
     nn::func_t(move |xs, train| {
         let result = &layer_scale * xs.apply_t(&block, train);
@@ -100,6 +133,10 @@ fn conv_norm(
             nn::ConvConfig {
                 stride,
                 padding,
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
                 ..Default::default()
             },
         ))
@@ -147,6 +184,10 @@ fn convnext(
                         2,
                         nn::ConvConfig {
                             stride: 2,
+                            ws_init: nn::Init::Randn {
+                                mean: 0.0,
+                                stdev: 0.02,
+                            },
                             ..Default::default()
                         },
                     )),
@@ -170,7 +211,14 @@ fn convnext(
             p / "classifier" / 2,
             lastconv_output_channels,
             num_classes,
-            Default::default(),
+            LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.02,
+                },
+                bs_init: Some(nn::Init::Const(0.0)),
+                ..Default::default()
+            },
         ));
     nn::seq_t()
         .add(layers)
