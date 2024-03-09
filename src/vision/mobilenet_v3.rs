@@ -1,3 +1,8 @@
+/* Ported from TorchVision MobileNetV3 model.
+ * MobileNetV3 model architecture from
+ * `Searching for MobileNetV3 <https://arxiv.org/abs/1905.02244>`_.
+ */
+
 use tch::nn::{self, batch_norm2d, conv2d, BatchNormConfig, ConvConfig};
 
 fn make_divisible(v: f64, divisor: i64, min_value: Option<i64>) -> i64 {
@@ -43,10 +48,22 @@ fn conv_norm_activation(
                 padding,
                 bias: false,
                 dilation,
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Normal,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::ReLU,
+                },
                 ..Default::default()
             },
         ))
-        .add(batch_norm2d(&p / 1, c_out, BatchNormConfig::default()))
+        .add(batch_norm2d(
+            &p / 1,
+            c_out,
+            BatchNormConfig {
+                ws_init: nn::Init::Const(1.0),
+                ..Default::default()
+            },
+        ))
         .add_fn(move |xs| match activation {
             Activation::Hardswish => xs.hardswish(),
             Activation::Relu => xs.relu(),
@@ -103,9 +120,35 @@ impl InvertedResidualConfig {
 fn squeeze_excitation(p: nn::Path, c_in: i64, c_squeeze: i64) -> impl nn::ModuleT {
     let scale = nn::seq_t()
         .add_fn(|xs| xs.adaptive_avg_pool2d([1, 1]))
-        .add(conv2d(&p / "fc1", c_in, c_squeeze, 1, Default::default()))
+        .add(conv2d(
+            &p / "fc1",
+            c_in,
+            c_squeeze,
+            1,
+            ConvConfig {
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Normal,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::ReLU,
+                },
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.relu())
-        .add(conv2d(&p / "fc2", c_squeeze, c_in, 1, Default::default()))
+        .add(conv2d(
+            &p / "fc2",
+            c_squeeze,
+            c_in,
+            1,
+            ConvConfig {
+                ws_init: nn::Init::Kaiming {
+                    dist: nn::init::NormalOrUniform::Normal,
+                    fan: nn::init::FanInOut::FanOut,
+                    non_linearity: nn::init::NonLinearity::ReLU,
+                },
+                ..Default::default()
+            },
+        ))
         .add_fn(|xs| xs.hardsigmoid());
     nn::func_t(move |xs, train| xs * xs.apply_t(&scale, train))
 }
@@ -219,7 +262,13 @@ fn mobilenet_v3(
             p / "classifier" / 0,
             lastconv_output_channels,
             last_channel,
-            Default::default(),
+            nn::LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.01,
+                },
+                ..Default::default()
+            },
         ))
         .add_fn(|xs| xs.hardswish())
         .add_fn_t(move |xs, train| xs.dropout(dropout, train))
@@ -227,7 +276,13 @@ fn mobilenet_v3(
             p / "classifier" / 3,
             last_channel,
             num_classes,
-            Default::default(),
+            nn::LinearConfig {
+                ws_init: nn::Init::Randn {
+                    mean: 0.0,
+                    stdev: 0.01,
+                },
+                ..Default::default()
+            },
         ));
     nn::func_t(move |xs, train| {
         xs.apply_t(&layers, train)

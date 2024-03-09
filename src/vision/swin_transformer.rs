@@ -1,3 +1,8 @@
+/* Ported from torchvision library
+* Swin Transformer model architecture from
+* `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows <https://arxiv.org/abs/2103.14030>`_.
+*/
+
 use std::ops::{AddAssign, DivAssign, MulAssign};
 
 use tch::{

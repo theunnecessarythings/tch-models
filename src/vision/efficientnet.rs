@@ -1,5 +1,12 @@
+/*
+* Ported from the torchvision library.
+* EfficientNet implementation based on the paper:
+* "EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks" by
+* Mingxing Tan, Quoc V. Le
+* https://arxiv.org/abs/1905.11946
+*/
 use tch::{
-    nn::{self, batch_norm2d, conv2d, linear, BatchNormConfig, ConvConfig},
+    nn::{self, batch_norm2d, conv2d, init::FanInOut, linear, BatchNormConfig, ConvConfig},
     Tensor,
 };
 
@@ -106,6 +113,11 @@ fn conv_norm_activation(
             padding,
             groups,
             bias: false,
+            ws_init: nn::Init::Kaiming {
+                dist: nn::init::NormalOrUniform::Normal,
+                fan: FanInOut::FanOut,
+                non_linearity: nn::init::NonLinearity::ReLU,
+            },
             ..Default::default()
         },
     );
@@ -114,6 +126,7 @@ fn conv_norm_activation(
         c_out,
         BatchNormConfig {
             eps: 0.001,
+            ws_init: nn::Init::Const(1.0),
             ..Default::default()
         },
     );
@@ -132,8 +145,34 @@ fn conv_norm_activation(
 }
 
 fn squeeze_excitation(p: nn::Path, c_in: i64, c_squeeze: i64) -> impl nn::ModuleT {
-    let fc1 = conv2d(&p / "fc1", c_in, c_squeeze, 1, Default::default());
-    let fc2 = conv2d(&p / "fc2", c_squeeze, c_in, 1, Default::default());
+    let fc1 = conv2d(
+        &p / "fc1",
+        c_in,
+        c_squeeze,
+        1,
+        nn::ConvConfigND {
+            ws_init: nn::Init::Kaiming {
+                dist: nn::init::NormalOrUniform::Normal,
+                fan: FanInOut::FanOut,
+                non_linearity: nn::init::NonLinearity::ReLU,
+            },
+            ..Default::default()
+        },
+    );
+    let fc2 = conv2d(
+        &p / "fc2",
+        c_squeeze,
+        c_in,
+        1,
+        nn::ConvConfigND {
+            ws_init: nn::Init::Kaiming {
+                dist: nn::init::NormalOrUniform::Normal,
+                fan: FanInOut::FanIn,
+                non_linearity: nn::init::NonLinearity::ReLU,
+            },
+            ..Default::default()
+        },
+    );
     nn::func_t(move |xs, _| {
         let scale = xs
             .adaptive_avg_pool2d([1, 1])
@@ -320,11 +359,19 @@ fn efficientnet(
     );
     layers = layers.add(lastconv);
 
+    let init_range = 1.0 / (num_classes as f64).sqrt();
     let fc = linear(
         p / "classifier" / 1,
         lastconv_c_out,
         num_classes,
-        Default::default(),
+        nn::LinearConfig {
+            ws_init: nn::Init::Uniform {
+                lo: -init_range,
+                up: init_range,
+            },
+            bs_init: Some(nn::Init::Const(0.0)),
+            ..Default::default()
+        },
     );
 
     nn::seq_t()

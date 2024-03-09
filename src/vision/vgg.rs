@@ -1,3 +1,7 @@
+/* Ported from PyTorch TorchVision VGG model.
+ * VGG model architecture from
+ * `Very Deep Convolutional Networks for Large-Scale Image Recognition <https://arxiv.org/abs/1409.1556>`_.
+ */
 use tch::nn::{self, ConvConfig};
 
 fn vgg(
